@@ -23,7 +23,7 @@ const (
 
 // New создает новый экземпляр Redis с проверкой подключения.
 func New() (*Redis, error) {
-	redisAddr := fmt.Sprintf("%s:%s", os.Getenv("REDIS_HOST"), os.Getenv("REDIS_PORT"))
+	redisAddr := os.Getenv("REDIS_ADDR")
 	redisPassword := os.Getenv("REDIS_PASSWORD")
 
 	redisClient := redis.NewClient(&redis.Options{
