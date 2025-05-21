@@ -63,7 +63,7 @@ func (r *Redis) SavManyNews(items [][]byte) error {
 }
 
 // SaveNewsItems сохраняет массив структур NewsItem в Redis с указанной датой.
-func (r *Redis) SavNews(item interface{}) error {
+func (r *Redis) SaveNews(item interface{}) error {
 
 	expiration := 48 * time.Hour
 	data, err := json.Marshal(item)

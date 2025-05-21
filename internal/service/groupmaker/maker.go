@@ -134,7 +134,7 @@ func (g *GroupMaker) insertVector(vec *vector.Vector, m model.Model) error {
 		log.Printf("Error adding new group: %v", err)
 		return err
 	}
-	err = g.cache.SavNews(newGroup)
+	err = g.cache.SaveNews(newGroup)
 	if err != nil {
 		log.Printf("Error saving group to cache: %v", err)
 		return err
