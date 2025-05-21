@@ -13,6 +13,7 @@ import (
 	model "agregator/group/internal/model/db/feed"
 	"agregator/group/internal/service/db"
 	"agregator/group/internal/service/embedding"
+	cache "agregator/group/internal/service/redis"
 	"agregator/group/service/group"
 	"agregator/group/service/vector"
 )
@@ -40,6 +41,7 @@ type GroupMaker struct {
 	timeLife          time.Duration
 	acceptOldGroups   bool
 	noDeleteOldGroups bool
+	cache             *cache.Redis
 }
 
 func NewGroupMaker(minDiff, maxDistance, alpha float64, timeLife time.Duration) *GroupMaker {
@@ -57,9 +59,21 @@ func NewGroupMaker(minDiff, maxDistance, alpha float64, timeLife time.Duration) 
 		log.Fatalf("Error creating DB instance: %v", err)
 	}
 
+	cache, err := cache.New()
+	if err != nil {
+		log.Fatalf("Error creating cache instance: %v", err)
+	}
+
+	vectorizer := embedding.New()
+
+	groups, err := loadFromCache(cache, vectorizer, db)
+	if err != nil {
+		groups = make([]*group.Group, 0, 100)
+	}
+
 	return &GroupMaker{
 		db:                db,
-		vectorizer:        embedding.New(),
+		vectorizer:        vectorizer,
 		minDiff:           minDiff,
 		alpha:             alpha,
 		mu:                sync.RWMutex{},
@@ -67,7 +81,28 @@ func NewGroupMaker(minDiff, maxDistance, alpha float64, timeLife time.Duration) 
 		acceptOldGroups:   acceptOldGroups,
 		noDeleteOldGroups: noDeleteOldGroups,
 		maxDistance:       maxDistance,
+		groups:            groups,
+		cache:             cache,
 	}
+}
+
+func loadFromCache(cache *cache.Redis, vectorizer *embedding.Service, db *db.DB) ([]*group.Group, error) {
+	items, errors := cache.LoadTodayNews()
+	for _, err := range errors {
+		if err != nil {
+			return nil, err
+		}
+	}
+	groups := make([]*group.Group, 0, len(items))
+	for _, item := range items {
+		gr, err := group.NewFromJSON(item, vectorizer, db)
+		if err != nil {
+			log.Printf("Error creating group from JSON: %v", err)
+			continue
+		}
+		groups = append(groups, gr)
+	}
+	return groups, nil
 }
 
 func (g *GroupMaker) correctItem(m model.Model) (title string, description string, full_text string) {
@@ -97,6 +132,11 @@ func (g *GroupMaker) insertVector(vec *vector.Vector, m model.Model) error {
 	newGroup, err := group.New(g.vectorizer, g.db, m, g.minDiff, g.maxDistance, g.alpha)
 	if err != nil {
 		log.Printf("Error adding new group: %v", err)
+		return err
+	}
+	err = g.cache.SavNews(newGroup)
+	if err != nil {
+		log.Printf("Error saving group to cache: %v", err)
 		return err
 	}
 	g.groups = append(g.groups, newGroup)
