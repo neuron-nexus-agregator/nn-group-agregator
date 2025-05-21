@@ -68,7 +68,7 @@ func NewGroupMaker(minDiff, maxDistance, alpha float64, timeLife time.Duration) 
 
 	groups, err := loadFromCache(cache, vectorizer, db)
 	if err != nil {
-		groups = make([]*group.Group, 0, 100)
+		groups = make([]*group.Group, 0, 1000)
 	}
 
 	return &GroupMaker{
@@ -93,7 +93,19 @@ func loadFromCache(cache *cache.Redis, vectorizer *embedding.Service, db *db.DB)
 			return nil, err
 		}
 	}
-	groups := make([]*group.Group, 0, len(items))
+
+	cap := 0
+	if len(items) > 0 {
+		if len(items) < 1000 {
+			cap = 1000
+		} else {
+			cap = 3 * len(items)
+		}
+	} else {
+		cap = 1000
+	}
+
+	groups := make([]*group.Group, 0, cap)
 	for _, item := range items {
 		gr, err := group.NewFromJSON(item, vectorizer, db)
 		if err != nil {
