@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -13,6 +12,7 @@ import (
 	"time"
 
 	cfg "agregator/group/internal/config/yandex/embedding"
+	"agregator/group/internal/interfaces"
 	"agregator/group/service/vector"
 )
 
@@ -21,13 +21,14 @@ type Service struct {
 	mu          sync.Mutex
 	cond        *sync.Cond
 	client      *http.Client
+	logger      interfaces.Logger
 }
 
-func New() *Service {
+func New(logger interfaces.Logger) *Service {
 	maxReqStr := os.Getenv("MAX_REQUESTS")
 	maxReq, err := strconv.Atoi(maxReqStr)
 	if err != nil {
-		log.Println("Invalid MAX_REQUESTS value, defaulting to 10")
+		logger.Info("Invalid MAX_REQUESTS value, defaulting to 10")
 		maxReq = 10
 	}
 
@@ -36,6 +37,7 @@ func New() *Service {
 		client: &http.Client{
 			Timeout: 60 * time.Second, // Таймаут для HTTP-запросов
 		},
+		logger: logger,
 	}
 	service.cond = sync.NewCond(&service.mu)
 	return service
@@ -69,11 +71,13 @@ func (s *Service) sendRequest(text string) (cfg.Response, error) {
 	}
 	data, err := json.Marshal(&request)
 	if err != nil {
+		s.logger.Error("Error marshaling request", "error", err)
 		return cfg.Response{}, err
 	}
 
 	req, err := http.NewRequest("POST", cfg.URL, bytes.NewReader(data))
 	if err != nil {
+		s.logger.Error("Error creating request", "error", err)
 		return cfg.Response{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -82,19 +86,24 @@ func (s *Service) sendRequest(text string) (cfg.Response, error) {
 
 	response, err := s.client.Do(req)
 	if err != nil {
+		s.logger.Error("Error sending request", "error", err)
 		return cfg.Response{}, err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(response.Body)
-		log.Printf("Error response from API: %s", string(body))
+		s.logger.Info("Error response from API", "status", response.StatusCode, "body", string(body))
 		return cfg.Response{}, err
 	}
 
 	var apiResponse cfg.Response
 	err = json.NewDecoder(response.Body).Decode(&apiResponse)
-	return apiResponse, err
+	if err != nil {
+		s.logger.Error("Error decoding response", "error", err)
+		return cfg.Response{}, err
+	}
+	return apiResponse, nil
 }
 
 func (s *Service) GetEmbedding(title, description, full_text string) (*vector.Vector, error) {
@@ -110,7 +119,7 @@ func (s *Service) GetEmbedding(title, description, full_text string) (*vector.Ve
 	}
 	response, err := s.sendRequest(text)
 	if err != nil {
-		log.Printf("Error getting embedding: %v", err)
+		s.logger.Error("Error getting embedding", "error", err)
 		return vector.NewZeroVector(1), err
 	}
 	return vector.New(response.Embedding), nil

@@ -3,9 +3,10 @@ package redis
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"time"
+
+	"agregator/group/internal/interfaces"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
@@ -15,6 +16,7 @@ import (
 type Redis struct {
 	redisClient *redis.Client
 	ctx         context.Context
+	logger      interfaces.Logger
 }
 
 const (
@@ -22,7 +24,7 @@ const (
 )
 
 // New создает новый экземпляр Redis с проверкой подключения.
-func New() (*Redis, error) {
+func New(logger interfaces.Logger) (*Redis, error) {
 	redisAddr := os.Getenv("REDIS_ADDR")
 	redisPassword := os.Getenv("REDIS_PASSWORD")
 
@@ -36,13 +38,14 @@ func New() (*Redis, error) {
 	defer cancel()
 
 	if _, err := redisClient.Ping(ctx).Result(); err != nil {
-		log.Printf("Ошибка подключения к Redis: %v", err)
+		logger.Error("Error pinging redis", "error", err)
 		return nil, err
 	}
 
 	r := &Redis{
 		redisClient: redisClient,
 		ctx:         context.Background(),
+		logger:      logger,
 	}
 
 	return r, nil
@@ -57,7 +60,7 @@ func (r *Redis) SavManyNews(items [][]byte) error {
 		pipe.Set(r.ctx, key, string(item), expiration)
 	}
 	if _, err := pipe.Exec(r.ctx); err != nil {
-		return fmt.Errorf("ошибка при выполнении конвейерных команд SET: %w", err)
+		r.logger.Error("Error executing pipeline", "error", err)
 	}
 	return nil
 }
@@ -68,9 +71,12 @@ func (r *Redis) SaveNews(item interface{}) error {
 	expiration := 48 * time.Hour
 	data, err := json.Marshal(item)
 	if err != nil {
-		return fmt.Errorf("ошибка при маршалинге данных: %w", err)
+		r.logger.Error("Error marshaling data", "error", err, "data", item)
 	}
 	err = r.redisClient.Set(r.ctx, redisKeyPrefix+r.generateUniqueID(), data, expiration).Err()
+	if err != nil {
+		r.logger.Error("Error saving data to Redis", "error", err, "data", item)
+	}
 	return err
 }
 
@@ -79,6 +85,7 @@ func (r *Redis) LoadTodayNews() ([][]byte, []error) {
 	pattern := fmt.Sprintf("%s:*", redisKeyPrefix)
 	keys, err := r.redisClient.Keys(r.ctx, pattern).Result()
 	if err != nil {
+		r.logger.Error("Error getting keys from Redis", "error", err)
 		return nil, []error{fmt.Errorf("ошибка при получении ключей из Redis: %w", err)}
 	}
 
@@ -87,6 +94,7 @@ func (r *Redis) LoadTodayNews() ([][]byte, []error) {
 	for _, key := range keys {
 		item, err := r.redisClient.Get(r.ctx, key).Result()
 		if err != nil {
+			r.logger.Error("Error getting value from Redis", "error", err)
 			errors = append(errors, fmt.Errorf("ошибка при получении значения из Redis (ключ: %s): %w", key, err))
 			continue
 		}

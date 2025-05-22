@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"agregator/group/internal/interfaces"
 	model "agregator/group/internal/model/db/feed"
 	"agregator/group/internal/service/db"
 	"agregator/group/internal/service/embedding"
@@ -42,9 +43,10 @@ type GroupMaker struct {
 	acceptOldGroups   bool
 	noDeleteOldGroups bool
 	cache             *cache.Redis
+	logger            interfaces.Logger
 }
 
-func NewGroupMaker(minDiff, maxDistance, alpha float64, timeLife time.Duration) *GroupMaker {
+func NewGroupMaker(minDiff, maxDistance, alpha float64, timeLife time.Duration, logger interfaces.Logger) *GroupMaker {
 	maxConnStr := os.Getenv("MAX_REQUESTS")
 	maxConn, err := strconv.Atoi(maxConnStr)
 	if err != nil {
@@ -56,18 +58,19 @@ func NewGroupMaker(minDiff, maxDistance, alpha float64, timeLife time.Duration) 
 
 	db, err := db.New(maxConn)
 	if err != nil {
-		log.Fatalf("Error creating DB instance: %v", err)
+		logger.Error("Error creating DB instance", "error", err)
 	}
 
-	cache, err := cache.New()
+	cache, err := cache.New(logger)
 	if err != nil {
-		log.Fatalf("Error creating cache instance: %v", err)
+		logger.Error("Error creating cache instance", "error", err)
 	}
 
-	vectorizer := embedding.New()
+	vectorizer := embedding.New(logger)
 
-	groups, err := loadFromCache(cache, vectorizer, db)
+	groups, err := loadFromCache(cache, vectorizer, db, logger)
 	if err != nil {
+		logger.Error("Error loading groups from cache", "error", err)
 		groups = make([]*group.Group, 0, 1000)
 	}
 
@@ -83,13 +86,15 @@ func NewGroupMaker(minDiff, maxDistance, alpha float64, timeLife time.Duration) 
 		maxDistance:       maxDistance,
 		groups:            groups,
 		cache:             cache,
+		logger:            logger,
 	}
 }
 
-func loadFromCache(cache *cache.Redis, vectorizer *embedding.Service, db *db.DB) ([]*group.Group, error) {
+func loadFromCache(cache *cache.Redis, vectorizer *embedding.Service, db *db.DB, logger interfaces.Logger) ([]*group.Group, error) {
 	items, errors := cache.LoadTodayNews()
 	for _, err := range errors {
 		if err != nil {
+			logger.Error("Error loading items from cache", "error", err)
 			return nil, err
 		}
 	}
@@ -109,7 +114,7 @@ func loadFromCache(cache *cache.Redis, vectorizer *embedding.Service, db *db.DB)
 	for _, item := range items {
 		gr, err := group.NewFromJSON(item, vectorizer, db)
 		if err != nil {
-			log.Printf("Error creating group from JSON: %v", err)
+			logger.Error("Error creating group from JSON", "error", err)
 			continue
 		}
 		groups = append(groups, gr)
@@ -143,12 +148,12 @@ func (g *GroupMaker) insertVector(vec *vector.Vector, m model.Model) error {
 	// Если группа не найдена, создаем новую
 	newGroup, err := group.New(g.vectorizer, g.db, m, g.minDiff, g.maxDistance, g.alpha)
 	if err != nil {
-		log.Printf("Error adding new group: %v", err)
+		g.logger.Error("Error creating new group", "error", err)
 		return err
 	}
 	err = g.cache.SaveNews(newGroup)
 	if err != nil {
-		log.Printf("Error saving group to cache: %v", err)
+		g.logger.Error("Error saving group to cache", "error", err)
 		return err
 	}
 	g.groups = append(g.groups, newGroup)
@@ -174,12 +179,12 @@ func (g *GroupMaker) deleteOld() {
 func (g *GroupMaker) UpdateGroups() error {
 	newFeeds, err := g.db.Get()
 	if err != nil {
-		log.Printf("Error getting new feeds: %v", err)
+		g.logger.Error("Error getting new feeds", "error", err)
 		return err
 	}
 
 	if len(newFeeds) == 0 {
-		log.Println("No new feeds to parse")
+		g.logger.Info("No new feeds to parse")
 		return nil
 	}
 	log.Printf("Parsing %d feeds", len(newFeeds))
@@ -219,12 +224,12 @@ func (g *GroupMaker) processFeed(feed model.Model) bool {
 
 	vec, err := g.vectorizer.GetEmbedding(g.correctItem(feed))
 	if err != nil {
-		log.Printf("Error getting embedding for item: %v", err)
+		g.logger.Error("Error getting embedding for item", "error", err)
 		return false
 	}
 
 	if err := g.insertVector(vec, feed); err != nil {
-		log.Printf("Error inserting vector for item: %v", err)
+		g.logger.Error("Error inserting vector for item", "error", err)
 		return false
 	}
 

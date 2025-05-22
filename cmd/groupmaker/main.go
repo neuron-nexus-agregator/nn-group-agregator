@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"log/slog"
 	"os"
 	"strconv"
 	"time"
@@ -46,6 +47,6 @@ func main() {
 
 	log.Default().Printf("DIFF: %v, ALPHA: %v, DISTANCE: %v\n", diff_float, alpha_float, distance_float)
 
-	app := app.New(diff_float, distance_float, alpha_float, 30*time.Second)
+	app := app.New(diff_float, distance_float, alpha_float, 30*time.Second, slog.Default())
 	app.Run()
 }
