@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"time"
@@ -72,14 +73,32 @@ func (g *DB) UpdateParsed(id uint64, parsed bool) error {
 
 func (g *DB) Insert(group *group.Group) (uint64, error) {
 	var id uint64
-	query := `
-        INSERT INTO groups (time, feed_id, is_rt, embedding) 
-        VALUES ($1, $2, $3, $4) 
-        RETURNING id
-    `
+	query := `INSERT INTO groups (time, feed_id, is_rt, embedding)
+			VALUES ($1, $2, $3, $4)
+			ON CONFLICT(feed_id) DO NOTHING
+			RETURNING id`
 
 	err := g.conn.QueryRow(query, group.Date, group.Content_id, group.IsTatarstan(), group.Centroid().ToPqString()).Scan(&id)
-	return id, err
+	// Проверяем, является ли ошибка sql.ErrNoRows
+	if err == sql.ErrNoRows {
+		// Это означает, что строка уже существовала, и INSERT не произошел.
+		// Вам нужно решить, что делать в этом случае:
+		// 1. Вернуть 0 и nil (или специальную ошибку "уже существует")
+		// 2. Сделать дополнительный запрос, чтобы получить ID существующей строки
+		//    (это может быть излишне, если ID вам не нужен в этом случае)
+
+		// Вариант 1: Возвращаем 0 и nil, если ID новой записи не был получен
+		// Это обычно означает "мы не вставили, но это не ошибка"
+		return 0, nil
+	}
+
+	// Если это какая-то другая ошибка, или если все прошло успешно, возвращаем ее
+	if err != nil {
+		return 0, err
+	}
+
+	// Если ошибок нет, значит, строка была успешно вставлена, и 'id' содержит новый ID.
+	return id, nil
 }
 
 func (g *DB) InsertCompares(groupID uint64, compareID uint64) error {

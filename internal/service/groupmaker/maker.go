@@ -188,7 +188,6 @@ func (g *GroupMaker) UpdateGroups() error {
 		return nil
 	}
 	log.Printf("Parsing %d feeds", len(newFeeds))
-	parsedList := make([]uint64, 0, 20)
 	// Обрабатываем фиды последовательно
 	for _, feed := range newFeeds {
 		if feed.Parsed {
@@ -197,17 +196,11 @@ func (g *GroupMaker) UpdateGroups() error {
 		if !g.processFeed(feed) {
 			continue
 		}
-		if len(parsedList) >= 20 {
-			g.db.UpdateParsedBatch(parsedList, true)
-			parsedList = nil
-			parsedList = make([]uint64, 0, 20)
+		err := g.db.UpdateParsed(feed.ID, true)
+		if err != nil {
+			g.logger.Error("Error updating parsed flag for feed", "error", err)
 		}
 		feed.Parsed = true
-		parsedList = append(parsedList, feed.ID)
-	}
-
-	if len(parsedList) > 0 {
-		g.db.UpdateParsedBatch(parsedList, true)
 	}
 
 	log.Printf("Parsing complete for %d groups", len(g.groups))

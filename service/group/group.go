@@ -97,8 +97,12 @@ func New(vervorizer Vectorizer, db DBWorker, item feed.Model, minDiff, maxDistan
 		log.Printf("Error inserting group: %v", err)
 		return group, err
 	}
-	group.ID = groupID
 
+	if groupID == 0 {
+		return nil, fmt.Errorf("error inserting group: groupID is 0")
+	}
+
+	group.ID = groupID
 	// Добавляем связь группы с элементом
 	if err := db.InsertCompares(groupID, item.ID); err != nil {
 		return group, err
@@ -214,10 +218,11 @@ func (g *Group) Vector() *vector.Vector {
 
 func (g *Group) CheckCompare(vec *vector.Vector) bool {
 	accept := g.centroid.CosDistance(vec) >= g.calculateDynamicThreshold()
-	if !accept {
-		return false
-	}
-	return g.centroid.EuclideanDistance(vec) >= g.calculateDynamycTresholdForDistance()
+	return accept
+	// if !accept {
+	// 	return false
+	// }
+	// return g.centroid.EuclideanDistance(vec) >= g.calculateDynamycTresholdForDistance()
 }
 
 func (g *Group) Length() int {
