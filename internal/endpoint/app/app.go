@@ -124,6 +124,7 @@ func (a *App) checkForRT(item *model.News) {
 	a.mu.Lock()
 	words := a.words
 	a.mu.Unlock()
+	item.IsRT = false
 	full := item.Title + "\n\n" + item.Description + "\n\n" + item.FullText
 	full = strings.ToLower(full)
 	for _, word := range words {
