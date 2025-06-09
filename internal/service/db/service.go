@@ -9,8 +9,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 
-	"agregator/group/internal/model/db/feed"
-	"agregator/group/service/group"
+	"agregator/group/service/vector"
 )
 
 type DB struct {
@@ -39,28 +38,6 @@ func New(maxConnections int) (*DB, error) {
 	return &DB{conn: conn}, nil
 }
 
-func (g *DB) UpdateParsedBatch(ids []uint64, parsed bool) error {
-	query := `
-        UPDATE feed 
-        SET parsed = $1 
-        WHERE id = ANY($2)
-    `
-	_, err := g.conn.Exec(query, parsed, ids)
-	return err
-}
-
-func (g *DB) Get() ([]feed.Model, error) {
-	var feeds []feed.Model
-	query := `
-        SELECT * 
-        FROM feed 
-        WHERE parsed = false 
-        ORDER BY id DESC
-    `
-	err := g.conn.Select(&feeds, query)
-	return feeds, err
-}
-
 func (g *DB) UpdateParsed(id uint64, parsed bool) error {
 	query := `
         UPDATE feed 
@@ -71,24 +48,16 @@ func (g *DB) UpdateParsed(id uint64, parsed bool) error {
 	return err
 }
 
-func (g *DB) Insert(group *group.Group) (uint64, error) {
+func (g *DB) Insert(t time.Time, feed_id int64, is_rt bool, vec *vector.Vector) (uint64, error) {
 	var id uint64
 	query := `INSERT INTO groups (time, feed_id, is_rt, embedding)
 			VALUES ($1, $2, $3, $4)
 			ON CONFLICT(feed_id) DO NOTHING
 			RETURNING id`
 
-	err := g.conn.QueryRow(query, group.Date, group.Content_id, group.IsTatarstan(), group.Centroid().ToPqString()).Scan(&id)
+	err := g.conn.QueryRow(query, t, feed_id, is_rt, vec.ToPqString()).Scan(&id)
 	// Проверяем, является ли ошибка sql.ErrNoRows
 	if err == sql.ErrNoRows {
-		// Это означает, что строка уже существовала, и INSERT не произошел.
-		// Вам нужно решить, что делать в этом случае:
-		// 1. Вернуть 0 и nil (или специальную ошибку "уже существует")
-		// 2. Сделать дополнительный запрос, чтобы получить ID существующей строки
-		//    (это может быть излишне, если ID вам не нужен в этом случае)
-
-		// Вариант 1: Возвращаем 0 и nil, если ID новой записи не был получен
-		// Это обычно означает "мы не вставили, но это не ошибка"
 		return 0, nil
 	}
 
@@ -107,16 +76,6 @@ func (g *DB) InsertCompares(groupID uint64, compareID uint64) error {
         VALUES ($1, $2)
     `
 	_, err := g.conn.Exec(query, groupID, compareID)
-	return err
-}
-
-func (g *DB) UpdateDate(groupID uint64, date time.Time, feedID uint64) error {
-	query := `
-        UPDATE groups 
-        SET feed_id = $1 
-        WHERE id = $2
-    `
-	_, err := g.conn.Exec(query, feedID, groupID)
 	return err
 }
 
