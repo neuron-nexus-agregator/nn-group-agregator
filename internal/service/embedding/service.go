@@ -98,10 +98,18 @@ func (s *Service) sendRequest(text string) (cfg.Response, error) {
 	}
 
 	var apiResponse cfg.Response
-	err = json.NewDecoder(response.Body).Decode(&apiResponse)
+	ans_data, err := io.ReadAll(response.Body)
 	if err != nil {
-		s.logger.Error("Error decoding response", "error", err)
+		s.logger.Error("Error reading response", "error", err)
 		return cfg.Response{}, err
+	}
+	err = json.Unmarshal(ans_data, &apiResponse)
+	if err != nil {
+		s.logger.Error("Error unmarshaling response", "error", err)
+		return cfg.Response{}, err
+	}
+	if os.Getenv("DEBUG") == "true" {
+		s.logger.Info("Response from API", "response", string(ans_data))
 	}
 	return apiResponse, nil
 }

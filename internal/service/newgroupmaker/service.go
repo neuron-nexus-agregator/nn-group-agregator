@@ -6,6 +6,7 @@ import (
 	"agregator/group/internal/service/elastic"
 	"agregator/group/internal/service/kafka"
 	"agregator/group/service/vector"
+	"fmt"
 	"time"
 )
 
@@ -32,6 +33,9 @@ func (group *Group) MakeNewGroup(item *model.News) error {
 	id, err := group.db.Insert(date, item.ID, item.IsRT, vec)
 	if err != nil {
 		return err
+	}
+	if id == 0 {
+		return fmt.Errorf("failed to insert news into database: such text is already inserted")
 	}
 	item.ClusterID = int64(id)
 	err = group.elastic.RegisterClusert(int64(id), item.PublishDate, item.Embedding, item.Title, item.FullText, item.Description)

@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"os"
 )
@@ -44,7 +46,12 @@ func (e *Elastic) GetClosest(embedding []float64, limit int) ([]kafka.Cluster, e
 		Items []kafka.Cluster `json:"items"`
 	}
 	var respStruct Response
-	err = json.NewDecoder(resp.Body).Decode(&respStruct)
+	byteData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	log.Default().Println("Получены кластеры по совпадению:", string(byteData))
+	err = json.Unmarshal(byteData, &respStruct)
 	if err != nil {
 		return nil, err
 	}

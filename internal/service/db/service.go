@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -49,6 +50,7 @@ func (g *DB) UpdateParsed(id uint64, parsed bool) error {
 }
 
 func (g *DB) Insert(t time.Time, feed_id int64, is_rt bool, vec *vector.Vector) (uint64, error) {
+	log.Default().Println("Inserting into DB", "time", t, "feed_id", feed_id, "is_rt", is_rt)
 	var id uint64
 	query := `INSERT INTO groups (time, feed_id, is_rt, embedding)
 			VALUES ($1, $2, $3, $4)
@@ -79,16 +81,6 @@ func (g *DB) InsertCompares(groupID uint64, compareID uint64) error {
 	return err
 }
 
-func (g *DB) UpdateRT(groupID uint64, isRT bool) error {
-	query := `
-        UPDATE groups 
-        SET is_rt = $1 
-        WHERE id = $2
-    `
-	_, err := g.conn.Exec(query, isRT, groupID)
-	return err
-}
-
 func (g *DB) GetRTWords() ([]string, error) {
 	var words []string
 	query := `
@@ -97,14 +89,4 @@ func (g *DB) GetRTWords() ([]string, error) {
     `
 	err := g.conn.Select(&words, query)
 	return words, err
-}
-
-func (g *DB) UpdateEmbedding(id uint64, pqVec string) error {
-	query := `
-        UPDATE groups 
-        SET embedding = $1 
-        WHERE id = $2
-    `
-	_, err := g.conn.Exec(query, pqVec, id)
-	return err
 }

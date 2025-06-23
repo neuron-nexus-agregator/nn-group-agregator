@@ -5,6 +5,7 @@ import (
 
 	"agregator/group/internal/endpoint/app"
 	"agregator/group/internal/interfaces"
+	"agregator/group/internal/service/rtchecker"
 )
 
 type App struct {
@@ -13,7 +14,7 @@ type App struct {
 
 func New(diff, maxDistance, alpha float64, sleepTime time.Duration, logger interfaces.Logger) *App {
 	return &App{
-		endpoint: app.New(diff, maxDistance, alpha, sleepTime, logger),
+		endpoint: app.New(diff, maxDistance, alpha, sleepTime, rtchecker.New(logger), logger),
 	}
 }
 

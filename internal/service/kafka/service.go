@@ -3,6 +3,7 @@ package kafka
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"time"
 
 	model "agregator/group/internal/model/kafka"
@@ -12,8 +13,10 @@ import (
 
 type Kafka struct {
 	textReader  *kafka.Reader
-	writer      *kafka.Writer
 	textChannel chan model.News
+	brokers     []string
+	writeTopic  string
+	writer      *kafka.Writer
 }
 
 func New(brokers []string, groupID, textTopic string, writeTopic string) *Kafka {
@@ -22,15 +25,19 @@ func New(brokers []string, groupID, textTopic string, writeTopic string) *Kafka 
 		GroupID: groupID,
 		Topic:   textTopic,
 	})
+
 	writer := &kafka.Writer{
-		Addr:     kafka.TCP(brokers...),
-		Topic:    writeTopic,
-		Balancer: &kafka.LeastBytes{},
+		Addr:      kafka.TCP(brokers...),
+		Topic:     writeTopic,
+		Balancer:  &kafka.LeastBytes{},
+		BatchSize: 10,
 	}
 
 	return &Kafka{
 		textReader:  textReader,
 		textChannel: make(chan model.News, 100),
+		brokers:     brokers,
+		writeTopic:  writeTopic,
 		writer:      writer,
 	}
 }
@@ -54,9 +61,13 @@ func (k *Kafka) StartReadingText(ctx context.Context) {
 			if err != nil {
 				continue
 			}
+			log.Default().Println("Reading from Kafka", "data", string(msg.Value))
 			item := model.Item{}
 			err = json.Unmarshal(msg.Value, &item)
 			if err != nil {
+				continue
+			}
+			if item.Changed {
 				continue
 			}
 			news := model.News{
@@ -88,6 +99,7 @@ func (k *Kafka) Write(data model.News) error {
 	if err != nil {
 		return err
 	}
+	log.Default().Println("Writing to Kafka", "data", string(message))
 	return k.writer.WriteMessages(context.Background(), kafka.Message{
 		Key:   []byte(data.MD5), // Используем MD5 как ключ
 		Value: message,
